@@ -5,6 +5,7 @@
 
 #include <Arduino.h>
 #include <driver/mcpwm.h>
+#include <U8x8lib.h>
 
 // Pin definitions
 #define PIN_HV_FET_OUTPUT 23
@@ -12,6 +13,11 @@
 #define PIN_GMC_COUNT_INPUT 2     // !! has to be capable of "interrupt on change"
 #define PIN_SPEAKER_OUTPUT_P 12
 #define PIN_SPEAKER_OUTPUT_N 0
+
+// OLED Display pin definitions
+#define PIN_OLED_RST 16
+#define PIN_OLED_SCL 15
+#define PIN_OLED_SDA 4
 
 // Dead Time of the Geiger Counter. [usec]
 // Has to be longer than the complete pulse generated on the Pin PIN_GMC_COUNT_INPUT.
@@ -51,8 +57,14 @@ hw_timer_t *audio_timer = NULL;
 bool speaker_enabled = true;  // Set to false to disable speaker
 bool led_enabled = true;     // Set to false to disable LED
 
+// Display settings
+bool display_enabled = true;  // Set to false to disable display
+
 // MUX for audio
 portMUX_TYPE mux_audio = portMUX_INITIALIZER_UNLOCKED;
+
+// OLED Display
+U8X8_SSD1306_128X64_NONAME_HW_I2C u8x8(PIN_OLED_RST, PIN_OLED_SCL, PIN_OLED_SDA);
 
 // ISR for high voltage generation
 void IRAM_ATTR isr_recharge() {
@@ -272,6 +284,25 @@ void setup_speaker() {
   }
 }
 
+// Setup display
+void setup_display() {
+  if (!display_enabled) {
+    return;
+  }
+  
+  // Initialize display
+  u8x8.begin();
+  u8x8.clear();
+  
+  // Show startup screen
+  u8x8.setFont(u8x8_font_amstrad_cpc_extended_f);
+  u8x8.drawString(0, 0, "Simple Geiger");
+  u8x8.drawString(0, 1, "Counter");
+  
+  // Wait a moment to show the startup screen
+  delay(1000);
+}
+
 void setup() {
   // Initialize Serial
   Serial.begin(115200);
@@ -295,6 +326,9 @@ void setup() {
   // Setup speaker
   setup_speaker();
   
+  // Setup display
+  setup_display();
+  
   // Attach interrupts
   attachInterrupt(digitalPinToInterrupt(PIN_HV_CAP_FULL_INPUT), isr_GMC_capacitor_full, RISING);  // capacitor full
   attachInterrupt(digitalPinToInterrupt(PIN_GMC_COUNT_INPUT), isr_GMC_count, FALLING);            // GMC pulse detected
@@ -302,7 +336,8 @@ void setup() {
   // Setup timer for high voltage generation
   setup_recharge_timer(isr_recharge, PERIOD_DURATION_US);
   
-  Serial.println("Setup complete - Speaker " + String(speaker_enabled ? "enabled" : "disabled"));
+  Serial.println("Setup complete - Speaker " + String(speaker_enabled ? "enabled" : "disabled") + 
+                 ", Display " + String(display_enabled ? "enabled" : "disabled"));
 }
 
 void loop() {
@@ -366,6 +401,7 @@ void loop() {
     
     // Calculate µSv/h using the tube factor
     float usvh = cpm * TUBE_FACTOR;
+    int usvh_nanos = (int)(usvh * 1000); // Convert to nanosieverts for display
     
     // Print the data
     Serial.print("Counts: ");
@@ -378,6 +414,22 @@ void loop() {
     Serial.print(hv_error ? "ERROR" : "OK");
     Serial.print(" | HV Pulses: ");
     Serial.println(hv_pulses);
+    
+    // Update display if enabled
+    if (display_enabled) {
+      // Clear display
+      u8x8.clear();
+      
+      // Show radiation value in large font
+      u8x8.setFont(u8x8_font_inb33_3x6_n);
+      char output[20];
+      sprintf(output, "%5d", usvh_nanos);
+      u8x8.drawString(0, 0, output);
+      
+      // Show unit in smaller font
+      u8x8.setFont(u8x8_font_amstrad_cpc_extended_f);
+      u8x8.drawString(0, 6, "nSv/h");
+    }
   }
   
   // Delay to achieve target loop duration
