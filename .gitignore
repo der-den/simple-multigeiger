@@ -1,0 +1,25 @@
+# Arduino build files
+build/
+.pio/
+
+# Arduino IDE files
+.vscode/
+.idea/
+
+# Compiled binaries
+*.bin
+*.elf
+*.hex
+
+# Debug files
+*.lst
+*.map
+
+# Temporary files
+*~
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
