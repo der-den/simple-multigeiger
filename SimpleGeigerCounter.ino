@@ -33,6 +33,9 @@
 // Target loop duration [ms]
 #define LOOP_DURATION 1000
 
+// Number of samples to keep for CPM calculation
+#define CPM_WINDOW_SIZE 60
+
 // Tube type conversion factor (SBM-20 as default)
 #define TUBE_FACTOR (1 / 2.47)
 
@@ -338,6 +341,8 @@ void setup() {
   
   Serial.println("Setup complete - Speaker " + String(speaker_enabled ? "enabled" : "disabled") + 
                  ", Display " + String(display_enabled ? "enabled" : "disabled"));
+
+  u8x8.clear();
 }
 
 void loop() {
@@ -348,6 +353,11 @@ void loop() {
   static unsigned int gm_count_time_between = 0;
   static unsigned long last_counts = 0;
   static unsigned long last_timestamp = 0;
+  
+  // Array to store counts for the last 60 seconds (for proper CPM calculation)
+  static unsigned long count_history[CPM_WINDOW_SIZE] = {0};
+  static int history_index = 0;
+  static unsigned long total_counts_in_window = 0;
   
   unsigned long current_ms = millis();  // to save multiple calls to millis()
 
@@ -396,8 +406,20 @@ void loop() {
     unsigned long counts = gm_counts - last_counts;
     last_counts = gm_counts;
     
-    // Calculate CPM (counts per minute)
-    unsigned int cpm = counts * 60;
+    // Update the rolling window for CPM calculation
+    // First, subtract the oldest count from the total
+    total_counts_in_window -= count_history[history_index];
+    // Then add the new count to the total
+    total_counts_in_window += counts;
+    // Update the history array
+    count_history[history_index] = counts;
+    // Move to the next position in the circular buffer
+    history_index = (history_index + 1) % CPM_WINDOW_SIZE;
+    
+    // Calculate CPM based on the actual counts in the window
+    // If we haven't filled the window yet, adjust the calculation
+    unsigned int seconds_in_window = min(current_ms / 1000, (unsigned long)CPM_WINDOW_SIZE);
+    unsigned int cpm = (seconds_in_window > 0) ? (total_counts_in_window * 60 / seconds_in_window) : 0;
     
     // Calculate µSv/h using the tube factor
     float usvh = cpm * TUBE_FACTOR;
@@ -418,17 +440,33 @@ void loop() {
     // Update display if enabled
     if (display_enabled) {
       // Clear display
-      u8x8.clear();
+      //u8x8.clear();
+      
+      // Format µSv/h value with 1 decimal place and 4 digits before decimal point
+      char output[20];
+      float usvh_rounded = round(usvh * 10) / 10.0; // Round to 1 decimal place
       
       // Show radiation value in large font
-      u8x8.setFont(u8x8_font_inb33_3x6_n);
-      char output[20];
-      sprintf(output, "%5d", usvh_nanos);
-      u8x8.drawString(0, 0, output);
+      u8x8.setFont(u8x8_font_inb21_2x4_n); // Slightly smaller font to fit both values
+      dtostrf(usvh_rounded, 5, 1, output); // Convert float to string with 1 decimal
       
-      // Show unit in smaller font
+      // Format to ensure 4 digits before decimal point with leading zeros
+      char formatted_output[20];
+      int whole_part = (int)usvh_rounded;
+      int decimal_part = (int)((usvh_rounded - whole_part) * 10);
+      
+      // Format with exactly 4 digits before decimal point
+      sprintf(formatted_output, "%04d.%01d", whole_part, decimal_part);
+      u8x8.drawString(2, 0, formatted_output);
+      
+      // Show unit below the value
       u8x8.setFont(u8x8_font_amstrad_cpc_extended_f);
-      u8x8.drawString(0, 6, "nSv/h");
+      u8x8.drawString(8, 4, "uSv/h");
+      
+      // Show CPM value below, aligned with the uSv value
+      u8x8.setFont(u8x8_font_amstrad_cpc_extended_f);
+      sprintf(output, "CPM: %d", cpm);
+      u8x8.drawString(3, 7, output);
     }
   }
   
