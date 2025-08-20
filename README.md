@@ -1,5 +1,7 @@
 # Simple Geiger Counter
 
+> **AI-Enhanced Project**: This project was improved with the assistance of Cascade AI, Used: Claude 3.7 Sonnet
+
 A minimal ESP32-based Geiger counter application extracted from the [MultiGeiger](https://github.com/ecocurious2/MultiGeiger) project.
 
 ## Features
